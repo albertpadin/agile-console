@@ -141,11 +141,30 @@ def create_and_switch_to_branch(branch_name):
 	print "Switched to branch. Go! Go! Go!"
 
 
-def fetch_tasks(filter_status=[]):
-	if filter_status:
-		print "Fetching " + " | ".join(filter_status) + " Tasks..."
+def fetch_tasks(filter_status=[], filter_owner=CONFIG['user'], all_tasks=False):
+	if filter_status and not all_tasks:
+		if filter_owner:
+			print "Fetching " + " | ".join(filter_status) + " Tasks owned by " + filter_owner + "..."
+		else:
+			print "Fetching " + " | ".join(filter_status) + " Tasks..."
+	elif filter_status and all_tasks:
+		if filter_owner:
+			print "Fetching ALL " + " | ".join(filter_status) + " Tasks owned by " + filter_owner + "..."
+		else:
+			print "Fetching ALL " + " | ".join(filter_status) + " Tasks..."
+	elif not all_tasks:
+		if filter_owner:
+			print "Fetching Tasks owned by " + filter_owner + "..."
+		else:
+			print "Fetching Tasks..."
 	else:
-		print "Fetching ALL Tasks..."
+		if filter_owner:
+			print "Fetching ALL Tasks owned by " + filter_owner + "..."
+		else:
+			print "Fetching ALL Tasks..."
+
+
+	fs = ""
 
 	if filter_status:
 		fs = "?filter_status="
@@ -154,27 +173,65 @@ def fetch_tasks(filter_status=[]):
 			fs += "&filter_status="
 		fs = fs[:-15]
 
-		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items' + fs)
-	else:
-		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items')
+	if not all_tasks:
+		if fs:
+			fs += ("&filter_project=" + str(get_current_project_id()))
+		else:
+			fs = "?filter_project=" + str(get_current_project_id())
+
+	if filter_owner:
+		if fs:
+			fs += ("&filter_owner=" + str(filter_owner))
+		else:
+			fs = "?filter_owner=" + str(filter_owner)
+
+	response = urllib2.urlopen('http://applify.sym.ph/api/v1/items' + fs)
 	api_response = json.loads(response.read())
 	items = api_response['data']['items']
 
 	if items:
+		items_done, items_pending, items_started, items_paused, items_others = [], [], [], [], []
 		count_items = 0
 		for item in items:
 			count = count_items + 1
 			if item['status'] == 'DONE':
-				print colorize(str(count) + '\t' + item['content'], 'green')
-			elif item['status'] == 'UNDONE':
-				print colorize(str(count) + '\t' + item['content'], 'red')
+				items_done.append(colorize(str(count) + '\t' + item['content'], 'green'))
+			elif item['status'] == 'PENDING':
+				items_pending.append(colorize(str(count) + '\t' + item['content'], 'red'))
 			elif item['status'] == 'PAUSED':
-				print colorize(str(count) + '\t' + item['content'], 'yellow')
+				items_paused.append(colorize(str(count) + '\t' + item['content'], 'yellow'))
 			elif item['status'] == 'STARTED':
-				print colorize(str(count) + '\t' + item['content'], 'cyan')
+				items_started.append(colorize(str(count) + '\t' + item['content'], 'cyan'))
 			else:
-				print str(count) + '\t' + item['content']
+				items_others.append(str(count) + '\t' + item['content'])
 			count_items += 1
+
+		if items_done:
+			print "\nDONE:"
+			for item in items_done:
+				print item
+
+		if items_started:
+			print "\nSTARTED:"
+			for item in items_started:
+				print item
+
+		if items_paused:
+			print "\nPAUSED:"
+			for item in items_paused:
+				print item
+
+		if items_pending:
+			print "\nPENDING:"
+			for item in items_pending:
+				print item
+
+		if items_others:
+			print "\nOTHERS:"
+			for item in items_others:
+				print item
+
+
 		print '\nFetched ' + str(count) + ' tasks.'
 	else:
 		print "No Tasks"
@@ -229,7 +286,8 @@ def finish_task(task_id):
 		print "Finishing Task with id " + str(task_id) + "..."
 		url = 'http://applify.sym.ph/api/v1/items/' + str(task_id)
 		task_data = {
-			"status": "DONE"
+			"status": "DONE",
+			"finisher": CONFIG['user'],
 		}
 		data = json.dumps(task_data)
 		req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
@@ -295,6 +353,21 @@ elif command == "link":
 elif command == "tasks":
 	if not parameters:
 		fetch_tasks()
+
+elif command == 'my':
+	if parameters:
+		if parameters[0] == 'tasks':
+			fetch_tasks(filter_owner=CONFIG['user'])
+
+
+elif command == 'all':
+	if len(parameters) == 2:
+		if parameters[0] == 'my' and parameters[1] == 'tasks':
+			fetch_tasks(filter_owner=CONFIG['user'], all_tasks=True)
+
+	if len(parameters) == 1:
+		if parameters[0] == 'tasks':
+			fetch_tasks(filter_owner=None, all_tasks=True)
 
 
 elif command == 'start':
