@@ -5,6 +5,7 @@ import sys
 import subprocess
 import urllib2
 import json
+from slugify import slugify
 
 cwd = (os.getcwd() + "/agile")
 home = os.path.expanduser("~")
@@ -38,7 +39,7 @@ def colorize(text, color=None):
 
 
 def read_config():
-	f = open(home + "/.agileconfig","w+")
+	f = open(home + "/.agileconfig","r+")
 	if not f:
 		return {}
 	contents = f.read()
@@ -111,6 +112,56 @@ def link_project():
 	add_to_config(project_url, project_id)
 
 
+def fetch_tasks(filter_status=None):
+	print "Fetching Tasks..."
+
+	if filter_status:
+		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items?filter_status=' + filter_status)
+	else:
+		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items')
+	api_response = json.loads(response.read())
+	items = api_response['data']['items']
+
+	if items:
+		count = 1
+		for item in items:
+			if item['status'] == 'DONE':
+				print colorize(str(count) + '\t' + item['content'], 'green')
+			elif item['status'] == 'UNDONE':
+				print colorize(str(count) + '\t' + item['content'], 'red')
+			elif item['status'] == 'PAUSED':
+				print colorize(str(count) + '\t' + item['content'], 'yellow')
+			elif item['status'] == 'STARTED':
+				print colorize(str(count) + '\t' + item['content'], 'cyan')
+			count += 1
+		print '\nFetched ' + str(count) + ' tasks.'
+	else:
+		print "No Tasks"
+
+	return items
+
+
+def start_task(task_id):
+	try:
+		print "Starting Task with id " + str(task_id) + "..."
+		url = 'http://applify.sym.ph/api/v1/items/' + str(task_id)
+		task_data = {
+			"status": "STARTED"
+		}
+		data = json.dumps(task_data)
+		req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+		response = urllib2.urlopen(req)
+		api_response = json.loads(response.read())
+		response.close()
+		print "Started Task."
+		return True
+
+	except IndexError:
+		print "What task do you want me to create? Please surround it with quotes."
+
+	return False
+
+
 # Parse args into command, options, and parameters
 args = sys.argv
 for arg in args[1:]:
@@ -160,20 +211,32 @@ elif command == "link":
 # List Tasks
 elif command == "tasks":
 	if not parameters:
-		print "Fetching Tasks..."
+		fetch_tasks()
 
-		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items')
-		api_response = json.loads(response.read())
-		items = api_response['data']['items']
 
-		if items:
-			count = 1
-			for item in items:
-				print colorize(str(item['id']) + '\t' + item['content'], 'red')
-				count += 1
-			print '\nFetched ' + str(count) + ' tasks.'
-		else:
-			print "No Tasks"
+elif command == 'start':
+	items = fetch_tasks()
+	b = raw_input("Enter # of Task to Start: ")
+	try:
+		index = int(b) - 1
+	except:
+		print "Error."
+		sys.exit(0)
+
+	item_id = items[index]["id"]
+
+	# Start Task
+	if not start_task(item_id):
+		sys.exit(0)
+
+	# Create branch. If it exists, switch to it.
+	git_response = subprocess.check_output(["git", "checkout", "-b", "'" + slugify(items[index]["content"]) + "_" + str(item_id) + "'"])
+	if "already exists" in git_response:
+		# Branch exists.
+		git_response = subprocess.check_output(["git", "checkout", "'" + slugify(items[index]["content"]) + "_" + str(item_id) + "'"])
+
+	print "Switched to branch. Go! Go! Go!"
+
 
 elif command == 'create':
 	if not parameters:
