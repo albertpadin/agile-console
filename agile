@@ -39,9 +39,7 @@ def colorize(text, color=None):
 
 
 def read_config():
-	f = open(home + "/.agileconfig","r+")
-	if not f:
-		return {}
+	f = open(home + "/.agileconfig","r")
 	contents = f.read()
 	if contents:
 		contents = json.loads(contents)
@@ -52,14 +50,8 @@ def read_config():
 
 
 def add_to_config(key, value):
-	f = open(home + "/.agileconfig","w+")
-	if not f:
-		return {}
-	contents = f.read()
-	if contents:
-		contents = json.loads(contents)
-	else:
-		contents = {}
+	contents = read_config()
+	f = open(home + "/.agileconfig","w")
 	contents[key] = value
 	f.write(json.dumps(contents))
 	f.close()
@@ -73,17 +65,7 @@ if not 'user' in CONFIG:
 	add_to_config('user', email.lower().strip())
 
 
-def get_current_project_id():
-	project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
-	try:
-		return CONFIG[project_url]
-	except KeyError:
-		return None
-
-
-def link_project():
-	project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
-
+def project_id_choices():
 	print "Fetching Projects..."
 
 	response = urllib2.urlopen('http://applify.sym.ph/api/v1/projects')
@@ -98,7 +80,7 @@ def link_project():
 			print project['description']
 			count += 1
 
-	b = raw_input("Enter # of Project to Link to this repo: ")
+	b = raw_input("Enter # of Project to use: ")
 	try:
 		index = int(b) - 1
 	except:
@@ -108,23 +90,80 @@ def link_project():
 		print "Error."
 		sys.exit(0)
 
-	project_id = projects[index]["id"]
+	return projects[index]["id"]
+
+
+def get_current_project_id():
+	project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
+	try:
+		return CONFIG[project_url]
+	except KeyError:
+		return project_id_choices()
+
+
+def get_current_branch():
+	branch_name = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+	return branch_name.strip()
+
+
+def strip_item_id_from_branch_name(branch_name):
+	splits = branch_name.split("_")
+	if len(splits) > 1:
+		item_id = splits[(len(splits) - 1)]
+		if "'" in item_id:
+			item_id = item_id.replace("'","")
+		if '"' in item_id:
+			item_id = item_id.replace('"','')
+		return item_id
+	else:
+		return None
+
+
+def get_current_item_id():
+	return strip_item_id_from_branch_name(get_current_branch())
+
+
+def link_project():
+	project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
+
+	project_id = project_id_choices()
 	add_to_config(project_url, project_id)
 
 
-def fetch_tasks(filter_status=None):
-	print "Fetching Tasks..."
+def create_and_switch_to_branch(branch_name):
+	# Create branch. If it exists, switch to it.
+	try:
+		git_response = subprocess.check_output(["git", "checkout", "-b", "'" + branch_name + "'"])
+	except:
+		# Branch exists.
+		git_response = subprocess.check_output(["git", "checkout", "'" + branch_name + "'"])
+
+	print "Switched to branch. Go! Go! Go!"
+
+
+def fetch_tasks(filter_status=[]):
+	if filter_status:
+		print "Fetching " + " | ".join(filter_status) + " Tasks..."
+	else:
+		print "Fetching ALL Tasks..."
 
 	if filter_status:
-		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items?filter_status=' + filter_status)
+		fs = "?filter_status="
+		for status in filter_status:
+			fs += status
+			fs += "&filter_status="
+		fs = fs[:-15]
+
+		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items' + fs)
 	else:
 		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items')
 	api_response = json.loads(response.read())
 	items = api_response['data']['items']
 
 	if items:
-		count = 1
+		count_items = 0
 		for item in items:
+			count = count_items + 1
 			if item['status'] == 'DONE':
 				print colorize(str(count) + '\t' + item['content'], 'green')
 			elif item['status'] == 'UNDONE':
@@ -133,7 +172,9 @@ def fetch_tasks(filter_status=None):
 				print colorize(str(count) + '\t' + item['content'], 'yellow')
 			elif item['status'] == 'STARTED':
 				print colorize(str(count) + '\t' + item['content'], 'cyan')
-			count += 1
+			else:
+				print str(count) + '\t' + item['content']
+			count_items += 1
 		print '\nFetched ' + str(count) + ' tasks.'
 	else:
 		print "No Tasks"
@@ -157,7 +198,49 @@ def start_task(task_id):
 		return True
 
 	except IndexError:
-		print "What task do you want me to create? Please surround it with quotes."
+		print "What task do you want me to start?"
+
+	return False
+
+
+def pause_task(task_id):
+	try:
+		print "Pausing Task with id " + str(task_id) + "..."
+		url = 'http://applify.sym.ph/api/v1/items/' + str(task_id)
+		task_data = {
+			"status": "PAUSED"
+		}
+		data = json.dumps(task_data)
+		req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+		response = urllib2.urlopen(req)
+		api_response = json.loads(response.read())
+		response.close()
+		print "Paused Task."
+		return True
+
+	except IndexError:
+		print "What task do you want me to pause?"
+
+	return False
+
+
+def finish_task(task_id):
+	try:
+		print "Finishing Task with id " + str(task_id) + "..."
+		url = 'http://applify.sym.ph/api/v1/items/' + str(task_id)
+		task_data = {
+			"status": "DONE"
+		}
+		data = json.dumps(task_data)
+		req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+		response = urllib2.urlopen(req)
+		api_response = json.loads(response.read())
+		response.close()
+		print "Finished Task."
+		return True
+
+	except IndexError:
+		print "What task do you want me to mark as DONE?"
 
 	return False
 
@@ -215,7 +298,23 @@ elif command == "tasks":
 
 
 elif command == 'start':
-	items = fetch_tasks()
+	if parameters:
+		if parameters[0] == 'this':
+			item_id = get_current_item_id()
+			if not item_id:
+				print "Not in a branch that has a valid branch name format"
+				sys.exit(0)
+
+			start_task(item_id)
+			sys.exit(0)
+			# already in branch no need to switch
+
+
+	# items = fetch_tasks(filter_status=["PENDING", "PAUSED"])
+	items = fetch_tasks(filter_status=["PAUSED"])
+	if not items:
+		sys.exit(0)
+
 	b = raw_input("Enter # of Task to Start: ")
 	try:
 		index = int(b) - 1
@@ -229,13 +328,64 @@ elif command == 'start':
 	if not start_task(item_id):
 		sys.exit(0)
 
-	# Create branch. If it exists, switch to it.
-	git_response = subprocess.check_output(["git", "checkout", "-b", "'" + slugify(items[index]["content"]) + "_" + str(item_id) + "'"])
-	if "already exists" in git_response:
-		# Branch exists.
-		git_response = subprocess.check_output(["git", "checkout", "'" + slugify(items[index]["content"]) + "_" + str(item_id) + "'"])
+	create_and_switch_to_branch(slugify(items[index]["content"]) + "_" + str(items[index]["id"]))
 
-	print "Switched to branch. Go! Go! Go!"
+
+elif command == 'pause':
+	if parameters:
+		if parameters[0] == 'this':
+			item_id = get_current_item_id()
+			if not item_id:
+				print "Not in a branch that has a valid branch name format"
+				sys.exit(0)
+
+			pause_task(item_id)
+
+
+	else:
+		items = fetch_tasks(filter_status=["STARTED"])
+		if not items:
+			sys.exit(0)
+		b = raw_input("Enter # of Task to Pause: ")
+		try:
+			index = int(b) - 1
+		except:
+			print "Error."
+			sys.exit(0)
+
+		item_id = items[index]["id"]
+
+		# Pause Task
+		pause_task(item_id)
+
+
+elif command == 'finish':
+	if parameters:
+		if parameters[0] == 'this':
+			item_id = get_current_item_id()
+			if not item_id:
+				print "Not in a branch that has a valid branch name format"
+				sys.exit(0)
+
+			finish_task(item_id)
+
+
+	else:
+		items = fetch_tasks(filter_status=["STARTED"])
+		if not items:
+			sys.exit(0)
+
+		b = raw_input("Enter # of Task to Finish: ")
+		try:
+			index = int(b) - 1
+		except:
+			print "Error."
+			sys.exit(0)
+
+		item_id = items[index]["id"]
+
+		# Pause Task
+		finish_task(item_id)
 
 
 elif command == 'create':
