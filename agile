@@ -7,6 +7,7 @@ import urllib2
 import json
 
 cwd = (os.getcwd() + "/agile")
+home = os.path.expanduser("~")
 
 options = []
 command = ""
@@ -36,8 +37,83 @@ def colorize(text, color=None):
 		return text
 
 
+def read_config():
+	f = open(home + "/.agileconfig","w+")
+	if not f:
+		return {}
+	contents = f.read()
+	if contents:
+		contents = json.loads(contents)
+	else:
+		contents = {}
+	f.close()
+	return contents
+
+
+def add_to_config(key, value):
+	f = open(home + "/.agileconfig","w+")
+	if not f:
+		return {}
+	contents = f.read()
+	if contents:
+		contents = json.loads(contents)
+	else:
+		contents = {}
+	contents[key] = value
+	f.write(json.dumps(contents))
+	f.close()
+	return contents
+
+
+CONFIG = read_config()
+
+if not 'user' in CONFIG:
+	email = raw_input("Enter your email address: ")
+	add_to_config('user', email.lower().strip())
+
+
+def get_current_project_id():
+	project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
+	try:
+		return CONFIG[project_url]
+	except KeyError:
+		return None
+
+
+def link_project():
+	project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
+
+	print "Fetching Projects..."
+
+	response = urllib2.urlopen('http://applify.sym.ph/api/v1/projects')
+	api_response = json.loads(response.read())
+	projects = api_response['data']['projects']
+
+	if projects:
+		count = 1
+		for project in projects:
+			print ''
+			print colorize(str(count) + " " + str(project['name']), 'green')
+			print project['description']
+			count += 1
+
+	b = raw_input("Enter # of Project to Link to this repo: ")
+	try:
+		index = int(b) - 1
+	except:
+		print "Error."
+
+	if index < 0 or index >= count:
+		print "Error."
+		sys.exit(0)
+
+	project_id = projects[index]["id"]
+	add_to_config(project_url, project_id)
+
+
 # Parse args into command, options, and parameters
-for arg in sys.argv:
+args = sys.argv
+for arg in args[1:]:
 	if arg.startswith("-"):
 		extract_options(arg)
 
@@ -51,8 +127,38 @@ for arg in sys.argv:
 		parameters.append(arg)
 
 
-# Tasks
-if command == "tasks":
+# List Projects
+if command == "projects":
+	if not parameters:
+		print "Fetching Projects..."
+
+		response = urllib2.urlopen('http://applify.sym.ph/api/v1/projects')
+		api_response = json.loads(response.read())
+		projects = api_response['data']['projects']
+
+		if projects:
+			count = 1
+			for project in projects:
+				print ''
+				print colorize(str(project['name']), 'green')
+				print project['description']
+				count += 1
+			print '\nFetched ' + str(count) + ' projects.'
+		else:
+			print "No Projects"
+
+	elif parameters[0] == 'link':
+		link_project()
+
+
+elif command == "link":
+	if parameters:
+		if parameters[0] == 'project':
+			link_project()
+
+
+# List Tasks
+elif command == "tasks":
 	if not parameters:
 		print "Fetching Tasks..."
 
@@ -76,14 +182,13 @@ elif command == 'create':
 	elif parameters[0] == 'task':
 		try:
 			task = parameters[1]
-			print "Creating Task..."
+			print "Creating Task for " + CONFIG['user'] + "..."
 			url = 'http://applify.sym.ph/api/v1/items'
 			task_data = {
 				"kind": "task",
 				"content": parameters[1],
-				"status": "done",
-				"owner": "albert@sym.ph",
-				"project": "5629499534213120",
+				"owner": CONFIG['user'],
+				"project": get_current_project_id(),
 				"tags": ["SAMPLE_TAG"]
 			}
 			data = json.dumps(task_data)
@@ -91,13 +196,33 @@ elif command == 'create':
 			response = urllib2.urlopen(req)
 			api_response = json.loads(response.read())
 			response.close()
-			print "Task Created!"
+			print "Created Task: " + task_data["content"]
 
 		except IndexError:
 			print "What task do you want me to create? Please surround it with quotes."
 
+	elif parameters[0] == 'project':
+		try:
+			project_name = parameters[1]
+			project_description = parameters[2]
+			print "Creating Project for " + CONFIG['user'] + "..."
+			url = 'http://applify.sym.ph/api/v1/projects'
+			project_data = {
+				"name": project_name,
+				"description": project_description
+			}
+			data = json.dumps(project_data)
+			req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+			response = urllib2.urlopen(req)
+			api_response = json.loads(response.read())
+			response.close()
+			print "Created Project: " + project_data["name"]
+
+		except IndexError:
+			print "Name AND Description required. Please surround it with quotes."
 
 
+# git config --get remote.origin.url
 
 # a = subprocess.check_output(["git", "branch"])
 # b = a.splitlines()
