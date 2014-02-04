@@ -93,12 +93,28 @@ def project_id_choices():
 	return projects[index]["id"]
 
 
-def get_current_project_id():
+def print_project_details(project_id):
+	response = urllib2.urlopen('http://applify.sym.ph/api/v1/projects/' + str(project_id))
+	api_response = json.loads(response.read())
+	try:
+		project = api_response['data']['projects'][0]
+	except IndexError:
+		print "Error. Invalid Project ID"
+		sys.exit(0)
+
+	print colorize(project['name'], 'green')
+	print project['description']
+
+
+def get_current_project_id(choices=True):
 	project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
 	try:
 		return CONFIG[project_url]
 	except KeyError:
-		return project_id_choices()
+		if choices:
+			return project_id_choices()
+		else:
+			return None
 
 
 def get_current_branch():
@@ -319,8 +335,17 @@ for arg in args[1:]:
 		parameters.append(arg)
 
 
+if command == "status":
+	# show project
+	project_id = get_current_project_id(choices=False)
+	if project_id:
+		print_project_details(project_id)
+	else:
+		print "Not in any project. Use 'agile link project' in git repo to link a project to a repo."
+
+
 # List Projects
-if command == "projects":
+elif command == "projects":
 	if not parameters:
 		print "Fetching Projects..."
 
@@ -364,6 +389,9 @@ elif command == 'all':
 	if len(parameters) == 2:
 		if parameters[0] == 'my' and parameters[1] == 'tasks':
 			fetch_tasks(filter_owner=CONFIG['user'], all_tasks=True)
+
+		elif "@" in parameters[0] and parameters[1] == 'tasks':
+			fetch_tasks(filter_owner=parameters[0], all_tasks=True)
 
 	if len(parameters) == 1:
 		if parameters[0] == 'tasks':
@@ -468,12 +496,16 @@ elif command == 'create':
 	elif parameters[0] == 'task':
 		try:
 			task = parameters[1]
-			print "Creating Task for " + CONFIG['user'] + "..."
+			try:
+				owner = parameters[2]
+			except IndexError:
+				owner = CONFIG['user']
+			print "Creating Task for " + owner + "..."
 			url = 'http://applify.sym.ph/api/v1/items'
 			task_data = {
 				"kind": "task",
 				"content": parameters[1],
-				"owner": CONFIG['user'],
+				"owner": owner,
 				"project": get_current_project_id(),
 				"tags": ["SAMPLE_TAG"]
 			}
@@ -506,6 +538,12 @@ elif command == 'create':
 
 		except IndexError:
 			print "Name AND Description required. Please surround it with quotes."
+
+
+elif "@" in command:
+	if parameters:
+		if parameters[0] == 'tasks':
+			fetch_tasks(filter_owner=command)
 
 
 # git config --get remote.origin.url
