@@ -85,12 +85,13 @@ try:
 				count += 1
 
 		b = raw_input("Enter # of Project to use: ")
+		index = 999999999
 		try:
 			index = int(b) - 1
 		except:
 			print "Error."
 
-		if index < 0 or index >= count:
+		if index < 0 or index >= (count - 1):
 			print "Error."
 			sys.exit(0)
 
