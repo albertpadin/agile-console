@@ -48,6 +48,27 @@ agile status
 ```
 
 
+Create a new project
+
+```
+agile create project 'Project Name' 'Project Description'
+```
+
+
+Create a new task for current user in current project
+
+```
+agile create task 'Task content goes here'
+```
+
+
+Create a new task for albert@sym.ph in current project
+
+```
+agile create task 'Task content goes here' albert@sym.ph
+```
+
+
 Shortcut for show all my tasks for this current project
 
 ```
@@ -62,6 +83,13 @@ agile my tasks
 ```
 
 
+Display tasks of albert@sym.ph in current project
+
+```
+agile albert@sym.ph tasks
+```
+
+
 Display all tasks of all users in all projects
 
 ```
@@ -73,6 +101,13 @@ Display all tasks of current user in all projects
 
 ```
 agile all my tasks
+```
+
+
+Display all tasks of albert@sym.ph in all projects
+
+```
+agile all albert@sym.ph tasks
 ```
 
 
