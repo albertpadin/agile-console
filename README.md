@@ -36,3 +36,83 @@ Run the following:
 ```
 agile tasks
 ```
+
+
+### Commands
+
+
+#### Display current project linked to this repo
+
+```
+agile status
+```
+
+
+#### Shortcut for show all my tasks for this current project
+
+```
+agile tasks
+```
+
+
+#### Display tasks of current user in the current project
+
+```
+agile my tasks
+```
+
+
+#### Display all tasks of all users in all projects
+
+```
+agile all tasks
+```
+
+
+#### Display all tasks of current user in all projects
+
+```
+agile all my tasks
+```
+
+
+#### Start a task that is currently paused or pending, associate a branch with it, and create that branch
+
+```
+agile start
+```
+
+
+#### Start the task associated with the current git branch
+
+```
+agile start this
+```
+
+
+#### Pause a task that has been started
+
+```
+agile pause
+```
+
+
+#### Pause the task associated with the current git branch
+
+```
+agile pause this
+```
+
+
+Finish a task that has been started
+
+```
+agile finish
+```
+
+
+Finish the task associated with the current git branch
+
+```
+agile finish this
+```
