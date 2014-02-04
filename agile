@@ -62,7 +62,7 @@ CONFIG = read_config()
 
 if not 'user' in CONFIG:
 	email = raw_input("Enter your email address: ")
-	add_to_config('user', email.lower().strip())
+	CONFIG = add_to_config('user', email.lower().strip())
 
 
 def project_id_choices():
@@ -127,7 +127,7 @@ def link_project():
 	project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
 
 	project_id = project_id_choices()
-	add_to_config(project_url, project_id)
+	CONFIG = add_to_config(project_url, project_id)
 
 
 def create_and_switch_to_branch(branch_name):
@@ -383,8 +383,8 @@ elif command == 'start':
 			# already in branch no need to switch
 
 
-	# items = fetch_tasks(filter_status=["PENDING", "PAUSED"])
-	items = fetch_tasks(filter_status=["PAUSED"])
+	items = fetch_tasks(filter_status=["PENDING", "PAUSED"])
+	# items = fetch_tasks(filter_status=["PAUSED"])
 	if not items:
 		sys.exit(0)
 
