@@ -1,558 +1,585 @@
 #!/usr/bin/python
 
 try:
-	import os
-	import sys
-	import subprocess
-	import urllib2
-	import json
-	from slugify import slugify
-
-	cwd = (os.getcwd() + "/agile")
-	home = os.path.expanduser("~")
-
-	options = []
-	command = ""
-	parameters = []
-
-
-	def extract_options(s):
-		for i in s:
-			if i in 'abcdefghijklmnopqrstuvwxyz':
-				options.append(i)
-
-
-	def colorize(text, color=None):
-		if color == 'red':
-			return '\033[1;31m' + text + '\033[0m'
-		elif color == 'blue':
-			return '\033[1;34m' + text + '\033[0m'
-		elif color == 'green':
-			return '\033[1;32m' + text + '\033[0m'
-		elif color == 'yellow':
-			return '\033[1;33m' + text + '\033[0m'
-		elif color == 'magenta' or color == 'pink':
-			return '\033[1;35m' + text + '\033[0m'
-		elif color == 'cyan':
-			return '\033[1;36m' + text + '\033[0m'
-		else:
-			return text
-
-
-	def read_config():
-		try:
-			f = open(home + "/.agileconfig","r")
-			contents = f.read()
-			if contents:
-				contents = json.loads(contents)
-			else:
-				contents = {}
-			f.close()
-		except:
-			contents = {}
-		return contents
-
-
-	def add_to_config(key, value):
-		contents = read_config()
-		f = open(home + "/.agileconfig","w")
-		contents[key] = value
-		f.write(json.dumps(contents))
-		f.close()
-		return contents
-
-
-	CONFIG = read_config()
-
-	if not 'user' in CONFIG:
-		email = raw_input("Enter your email address: ")
-		CONFIG = add_to_config('user', email.lower().strip())
-
-
-	def project_id_choices():
-		print "Fetching Projects..."
-
-		response = urllib2.urlopen('http://applify.sym.ph/api/v1/projects')
-		api_response = json.loads(response.read())
-		projects = api_response['data']['projects']
-
-		if projects:
-			count = 1
-			for project in projects:
-				print ''
-				print colorize(str(count) + " " + str(project['name']), 'green')
-				print project['description']
-				count += 1
-
-		b = raw_input("Enter # of Project to use: ")
-		index = 999999999
-		try:
-			index = int(b) - 1
-		except:
-			print "Error."
-
-		if index < 0 or index >= (count - 1):
-			print "Error."
-			sys.exit(0)
-
-		return projects[index]["id"]
-
-
-	def print_project_details(project_id):
-		response = urllib2.urlopen('http://applify.sym.ph/api/v1/projects/' + str(project_id))
-		api_response = json.loads(response.read())
-		try:
-			project = api_response['data']['projects'][0]
-		except IndexError:
-			print "Error. Invalid Project ID"
-			sys.exit(0)
-
-		print colorize(project['name'], 'green')
-		print project['description']
-
-
-	def get_current_project_id(choices=True):
-		project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
-		try:
-			return CONFIG[project_url]
-		except KeyError:
-			if choices:
-				return project_id_choices()
-			else:
-				return None
-
-
-	def get_current_branch():
-		branch_name = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-		return branch_name.strip()
-
-
-	def strip_item_id_from_branch_name(branch_name):
-		splits = branch_name.split("_")
-		if len(splits) > 1:
-			item_id = splits[(len(splits) - 1)]
-			if "'" in item_id:
-				item_id = item_id.replace("'","")
-			if '"' in item_id:
-				item_id = item_id.replace('"','')
-			return item_id
-		else:
-			return None
-
-
-	def get_current_item_id():
-		return strip_item_id_from_branch_name(get_current_branch())
-
-
-	def link_project():
-		project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
-
-		project_id = project_id_choices()
-		CONFIG = add_to_config(project_url, project_id)
-
-
-	def create_and_switch_to_branch(branch_name):
-		# Create branch. If it exists, switch to it.
-		try:
-			git_response = subprocess.check_output(["git", "checkout", "-b", "'" + branch_name + "'"])
-		except:
-			# Branch exists.
-			git_response = subprocess.check_output(["git", "checkout", "'" + branch_name + "'"])
-
-		print "Switched to branch. Go! Go! Go!"
-
-
-	def fetch_tasks(filter_status=[], filter_owner=CONFIG['user'], all_tasks=False):
-		if filter_status and not all_tasks:
-			if filter_owner:
-				print "Fetching " + " | ".join(filter_status) + " Tasks owned by " + filter_owner + "..."
-			else:
-				print "Fetching " + " | ".join(filter_status) + " Tasks..."
-		elif filter_status and all_tasks:
-			if filter_owner:
-				print "Fetching ALL " + " | ".join(filter_status) + " Tasks owned by " + filter_owner + "..."
-			else:
-				print "Fetching ALL " + " | ".join(filter_status) + " Tasks..."
-		elif not all_tasks:
-			if filter_owner:
-				print "Fetching Tasks owned by " + filter_owner + "..."
-			else:
-				print "Fetching Tasks..."
-		else:
-			if filter_owner:
-				print "Fetching ALL Tasks owned by " + filter_owner + "..."
-			else:
-				print "Fetching ALL Tasks..."
-
-
-		fs = ""
-
-		if filter_status:
-			fs = "?filter_status="
-			for status in filter_status:
-				fs += status
-				fs += "&filter_status="
-			fs = fs[:-15]
-
-		if not all_tasks:
-			if fs:
-				fs += ("&filter_project=" + str(get_current_project_id()))
-			else:
-				fs = "?filter_project=" + str(get_current_project_id())
-
-		if filter_owner:
-			if fs:
-				fs += ("&filter_owner=" + str(filter_owner))
-			else:
-				fs = "?filter_owner=" + str(filter_owner)
-
-		response = urllib2.urlopen('http://applify.sym.ph/api/v1/items' + fs)
-		api_response = json.loads(response.read())
-		items = api_response['data']['items']
-
-		if items:
-			items_done, items_pending, items_started, items_paused, items_others = [], [], [], [], []
-			count_items = 0
-			for item in items:
-				count = count_items + 1
-				if item['status'] == 'DONE':
-					items_done.append(colorize(str(count) + '\t' + item['content'], 'green'))
-				elif item['status'] == 'PENDING':
-					items_pending.append(colorize(str(count) + '\t' + item['content'], 'red'))
-				elif item['status'] == 'PAUSED':
-					items_paused.append(colorize(str(count) + '\t' + item['content'], 'yellow'))
-				elif item['status'] == 'STARTED':
-					items_started.append(colorize(str(count) + '\t' + item['content'], 'cyan'))
-				else:
-					items_others.append(str(count) + '\t' + item['content'])
-				count_items += 1
-
-			if items_done:
-				print "\nDONE:"
-				for item in items_done:
-					print item
-
-			if items_started:
-				print "\nSTARTED:"
-				for item in items_started:
-					print item
-
-			if items_paused:
-				print "\nPAUSED:"
-				for item in items_paused:
-					print item
-
-			if items_pending:
-				print "\nPENDING:"
-				for item in items_pending:
-					print item
-
-			if items_others:
-				print "\nOTHERS:"
-				for item in items_others:
-					print item
-
-
-			print '\nFetched ' + str(count) + ' tasks.'
-		else:
-			print "No Tasks"
-
-		return items
-
-
-	def start_task(task_id):
-		try:
-			print "Starting Task with id " + str(task_id) + "..."
-			url = 'http://applify.sym.ph/api/v1/items/' + str(task_id)
-			task_data = {
-				"status": "STARTED"
-			}
-			data = json.dumps(task_data)
-			req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
-			response = urllib2.urlopen(req)
-			api_response = json.loads(response.read())
-			response.close()
-			print "Started Task."
-			return True
-
-		except IndexError:
-			print "What task do you want me to start?"
-
-		return False
-
-
-	def pause_task(task_id):
-		try:
-			print "Pausing Task with id " + str(task_id) + "..."
-			url = 'http://applify.sym.ph/api/v1/items/' + str(task_id)
-			task_data = {
-				"status": "PAUSED"
-			}
-			data = json.dumps(task_data)
-			req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
-			response = urllib2.urlopen(req)
-			api_response = json.loads(response.read())
-			response.close()
-			print "Paused Task."
-			return True
-
-		except IndexError:
-			print "What task do you want me to pause?"
-
-		return False
-
-
-	def finish_task(task_id):
-		try:
-			print "Finishing Task with id " + str(task_id) + "..."
-			url = 'http://applify.sym.ph/api/v1/items/' + str(task_id)
-			task_data = {
-				"status": "DONE",
-				"finisher": CONFIG['user'],
-			}
-			data = json.dumps(task_data)
-			req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
-			response = urllib2.urlopen(req)
-			api_response = json.loads(response.read())
-			response.close()
-			print "Finished Task."
-			return True
-
-		except IndexError:
-			print "What task do you want me to mark as DONE?"
-
-		return False
-
-
-	# Parse args into command, options, and parameters
-	args = sys.argv
-	for arg in args[1:]:
-		if arg.startswith("-"):
-			extract_options(arg)
-
-		elif arg == cwd:
-			continue
-
-		elif not command:
-			command = arg
-
-		else:
-			parameters.append(arg)
-
-
-	if command == "status":
-		# show project
-		project_id = get_current_project_id(choices=False)
-		if project_id:
-			print_project_details(project_id)
-		else:
-			print "Not in any project. Use 'agile link project' in git repo to link a project to a repo."
-
-
-	# List Projects
-	elif command == "projects":
-		if not parameters:
-			print "Fetching Projects..."
-
-			response = urllib2.urlopen('http://applify.sym.ph/api/v1/projects')
-			api_response = json.loads(response.read())
-			projects = api_response['data']['projects']
-
-			if projects:
-				count = 1
-				for project in projects:
-					print ''
-					print colorize(str(project['name']), 'green')
-					print project['description']
-					count += 1
-				print '\nFetched ' + str(count) + ' projects.'
-			else:
-				print "No Projects"
-
-		elif parameters[0] == 'link':
-			link_project()
-
-
-	elif command == "link":
-		if parameters:
-			if parameters[0] == 'project':
-				link_project()
-
-
-	# List Tasks
-	elif command == "tasks":
-		if not parameters:
-			fetch_tasks()
-
-	elif command == 'my':
-		if parameters:
-			if parameters[0] == 'tasks':
-				fetch_tasks(filter_owner=CONFIG['user'])
-
-
-	elif command == 'all':
-		if len(parameters) == 2:
-			if parameters[0] == 'my' and parameters[1] == 'tasks':
-				fetch_tasks(filter_owner=CONFIG['user'], all_tasks=True)
-
-			elif "@" in parameters[0] and parameters[1] == 'tasks':
-				fetch_tasks(filter_owner=parameters[0], all_tasks=True)
-
-		if len(parameters) == 1:
-			if parameters[0] == 'tasks':
-				fetch_tasks(filter_owner=None, all_tasks=True)
-
-
-	elif command == 'start':
-		if parameters:
-			if parameters[0] == 'this':
-				item_id = get_current_item_id()
-				if not item_id:
-					print "Not in a branch that has a valid branch name format"
-					sys.exit(0)
-
-				start_task(item_id)
-				sys.exit(0)
-				# already in branch no need to switch
-
-
-		items = fetch_tasks(filter_status=["PENDING", "PAUSED"])
-		# items = fetch_tasks(filter_status=["PAUSED"])
-		if not items:
-			sys.exit(0)
-
-		b = raw_input("Enter # of Task to Start: ")
-		try:
-			index = int(b) - 1
-		except:
-			print "Error."
-			sys.exit(0)
-
-		item_id = items[index]["id"]
-
-		# Start Task
-		if not start_task(item_id):
-			sys.exit(0)
-
-		create_and_switch_to_branch(slugify(items[index]["content"]) + "_" + str(items[index]["id"]))
-
-
-	elif command == 'pause':
-		if parameters:
-			if parameters[0] == 'this':
-				item_id = get_current_item_id()
-				if not item_id:
-					print "Not in a branch that has a valid branch name format"
-					sys.exit(0)
-
-				pause_task(item_id)
-
-
-		else:
-			items = fetch_tasks(filter_status=["STARTED"])
-			if not items:
-				sys.exit(0)
-			b = raw_input("Enter # of Task to Pause: ")
-			try:
-				index = int(b) - 1
-			except:
-				print "Error."
-				sys.exit(0)
-
-			item_id = items[index]["id"]
-
-			# Pause Task
-			pause_task(item_id)
-
-
-	elif command == 'finish':
-		if parameters:
-			if parameters[0] == 'this':
-				item_id = get_current_item_id()
-				if not item_id:
-					print "Not in a branch that has a valid branch name format"
-					sys.exit(0)
-
-				finish_task(item_id)
-
-
-		else:
-			items = fetch_tasks(filter_status=["STARTED"])
-			if not items:
-				sys.exit(0)
-
-			b = raw_input("Enter # of Task to Finish: ")
-			try:
-				index = int(b) - 1
-			except:
-				print "Error."
-				sys.exit(0)
-
-			item_id = items[index]["id"]
-
-			# Pause Task
-			finish_task(item_id)
-
-
-	elif command == 'create':
-		if not parameters:
-			print "What do you want me to create? Missing parameter error."
-
-		elif parameters[0] == 'task':
-			try:
-				task = parameters[1]
-				try:
-					owner = parameters[2]
-				except IndexError:
-					owner = CONFIG['user']
-				print "Creating Task for " + owner + "..."
-				url = 'http://applify.sym.ph/api/v1/items'
-				task_data = {
-					"kind": "task",
-					"content": parameters[1],
-					"owner": owner,
-					"project": get_current_project_id(),
-					"tags": ["SAMPLE_TAG"]
-				}
-				data = json.dumps(task_data)
-				req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
-				response = urllib2.urlopen(req)
-				api_response = json.loads(response.read())
-				response.close()
-				print "Created Task: " + task_data["content"]
-
-			except IndexError:
-				print "What task do you want me to create? Please surround it with quotes."
-
-		elif parameters[0] == 'project':
-			try:
-				project_name = parameters[1]
-				project_description = parameters[2]
-				print "Creating Project for " + CONFIG['user'] + "..."
-				url = 'http://applify.sym.ph/api/v1/projects'
-				project_data = {
-					"name": project_name,
-					"description": project_description
-				}
-				data = json.dumps(project_data)
-				req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
-				response = urllib2.urlopen(req)
-				api_response = json.loads(response.read())
-				response.close()
-				print "Created Project: " + project_data["name"]
-
-			except IndexError:
-				print "Name AND Description required. Please surround it with quotes."
-
-
-	elif "@" in command:
-		if parameters:
-			if parameters[0] == 'tasks':
-				fetch_tasks(filter_owner=command)
+    import os
+    import sys
+    import subprocess
+    import urllib2
+    import json
+    from slugify import slugify
+
+    cwd = (os.getcwd() + "/agile")
+    home = os.path.expanduser("~")
+
+    options = []
+    command = ""
+    parameters = []
+
+
+    def extract_options(s):
+        for i in s:
+            if i in 'abcdefghijklmnopqrstuvwxyz':
+                options.append(i)
+
+
+    def colorize(text, color=None):
+        if color == 'red':
+            return '\033[1;31m' + text + '\033[0m'
+        elif color == 'blue':
+            return '\033[1;34m' + text + '\033[0m'
+        elif color == 'green':
+            return '\033[1;32m' + text + '\033[0m'
+        elif color == 'yellow':
+            return '\033[1;33m' + text + '\033[0m'
+        elif color == 'magenta' or color == 'pink':
+            return '\033[1;35m' + text + '\033[0m'
+        elif color == 'cyan':
+            return '\033[1;36m' + text + '\033[0m'
+        else:
+            return text
+
+
+    def read_config():
+        try:
+            f = open(home + "/.agileconfig","r")
+            contents = f.read()
+            if contents:
+                contents = json.loads(contents)
+            else:
+                contents = {}
+            f.close()
+        except:
+            contents = {}
+        return contents
+
+
+    def add_to_config(key, value):
+        contents = read_config()
+        f = open(home + "/.agileconfig","w")
+        contents[key] = value
+        f.write(json.dumps(contents))
+        f.close()
+        return contents
+
+    CONFIG = read_config()
+
+    def teampura_url(team=None, url_object=None, category=None):
+        TEAMPURA_URL = "http://" + CONFIG["teams"][0] + ".teampura.com/api/v3/"
+        if team:
+            TEAMPURA_URL = "http://" + team + ".teampura.com/api/v3/"
+
+        if url_object:
+            TEAMPURA_URL += url_object
+
+        if category:
+            TEAMPURA_URL += category
+
+        TEAMPURA_URL += "?access_token=" + CONFIG["token"]
+
+        return TEAMPURA_URL
+
+
+
+    if not 'user' in CONFIG:
+        email = raw_input("Enter your email address: ")
+        CONFIG = add_to_config('user', email.lower().strip())
+
+
+    def project_id_choices():
+        print "Fetching Projects..."
+
+        url = teampura_url(url_object="projects")
+        response = urllib2.urlopen(url)
+        api_response = json.loads(response.read())
+        projects = api_response['data']['projects']
+
+        if projects:
+            count = 1
+            for project in projects:
+                print ''
+                print colorize(str(count) + " " + str(project['name']), 'green')
+                print project['description']
+                count += 1
+
+        b = raw_input("Enter # of Project to use: ")
+        index = 999999999
+        try:
+            index = int(b) - 1
+        except:
+            print "Error."
+
+        if index < 0 or index >= (count - 1):
+            print "Error."
+            sys.exit(0)
+
+        return projects[index]["id"]
+
+
+    def print_project_details(project_id):
+        url = teampura_url(url_object="projects")
+        response = urllib2.urlopen(url + str(project_id))
+        api_response = json.loads(response.read())
+        try:
+            project = api_response['data']['projects'][0]
+        except IndexError:
+            print "Error. Invalid Project ID"
+            sys.exit(0)
+
+        print colorize(project['name'], 'green')
+        print project['description']
+
+
+    def get_current_project_id(choices=True):
+        project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
+        try:
+            return CONFIG[project_url]
+        except KeyError:
+            if choices:
+                return project_id_choices()
+            else:
+                return None
+
+
+    def get_current_branch():
+        branch_name = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        return branch_name.strip()
+
+
+    def strip_item_id_from_branch_name(branch_name):
+        splits = branch_name.split("_")
+        if len(splits) > 1:
+            item_id = splits[(len(splits) - 1)]
+            if "'" in item_id:
+                item_id = item_id.replace("'","")
+            if '"' in item_id:
+                item_id = item_id.replace('"','')
+            return item_id
+        else:
+            return None
+
+
+    def get_current_item_id():
+        return strip_item_id_from_branch_name(get_current_branch())
+
+
+    def link_project():
+        project_url = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
+
+        project_id = project_id_choices()
+        CONFIG = add_to_config(project_url, project_id)
+
+
+    def create_and_switch_to_branch(branch_name):
+        # Create branch. If it exists, switch to it.
+        try:
+            git_response = subprocess.check_output(["git", "checkout", "-b", "'" + branch_name + "'"])
+        except:
+            # Branch exists.
+            git_response = subprocess.check_output(["git", "checkout", "'" + branch_name + "'"])
+
+        print "Switched to branch. Go! Go! Go!"
+
+
+    def fetch_tasks(filter_status=[], filter_owner=CONFIG['user'], all_tasks=False):
+        if filter_status and not all_tasks:
+            if filter_owner:
+                print "Fetching " + " | ".join(filter_status) + " Tasks owned by " + filter_owner + "..."
+            else:
+                print "Fetching " + " | ".join(filter_status) + " Tasks..."
+        elif filter_status and all_tasks:
+            if filter_owner:
+                print "Fetching ALL " + " | ".join(filter_status) + " Tasks owned by " + filter_owner + "..."
+            else:
+                print "Fetching ALL " + " | ".join(filter_status) + " Tasks..."
+        elif not all_tasks:
+            if filter_owner:
+                print "Fetching Tasks owned by " + filter_owner + "..."
+            else:
+                print "Fetching Tasks..."
+        else:
+            if filter_owner:
+                print "Fetching ALL Tasks owned by " + filter_owner + "..."
+            else:
+                print "Fetching ALL Tasks..."
+
+
+        fs = ""
+
+        if filter_status:
+            fs = "&filter_status="
+            for status in filter_status:
+                fs += status
+                fs += "&filter_status="
+            fs = fs[:-15]
+
+        if not all_tasks:
+            if fs:
+                fs += ("&filter_project=" + str(get_current_project_id()))
+            if fs:
+                fs += ("&filter_project=" + str(get_current_project_id()))
+
+        if filter_owner:
+            if fs:
+                fs += ("&filter_owner=" + str(filter_owner))
+            else:
+                fs += ("&filter_owner=" + str(filter_owner))
+
+        url = teampura_url(url_object="items") + fs
+        print url
+
+        response = urllib2.urlopen(url)
+        api_response = json.loads(response.read())
+        items = api_response['data']['items']
+
+        if items:
+            items_done, items_pending, items_started, items_paused, items_others = [], [], [], [], []
+            count_items = 0
+            for item in items:
+                count = count_items + 1
+                if item['status'] == 'DONE':
+                    items_done.append(colorize(str(count) + '\t' + item['content'], 'green'))
+                elif item['status'] == 'PENDING':
+                    items_pending.append(colorize(str(count) + '\t' + item['content'], 'red'))
+                elif item['status'] == 'PAUSED':
+                    items_paused.append(colorize(str(count) + '\t' + item['content'], 'yellow'))
+                elif item['status'] == 'STARTED':
+                    items_started.append(colorize(str(count) + '\t' + item['content'], 'cyan'))
+                else:
+                    items_others.append(str(count) + '\t' + item['content'])
+                count_items += 1
+
+            if items_done:
+                print "\nDONE:"
+                for item in items_done:
+                    print item
+
+            if items_started:
+                print "\nSTARTED:"
+                for item in items_started:
+                    print item
+
+            if items_paused:
+                print "\nPAUSED:"
+                for item in items_paused:
+                    print item
+
+            if items_pending:
+                print "\nPENDING:"
+                for item in items_pending:
+                    print item
+
+            if items_others:
+                print "\nOTHERS:"
+                for item in items_others:
+                    print item
+
+
+            print '\nFetched ' + str(count) + ' tasks.'
+        else:
+            print "No Tasks"
+
+        return items
+
+
+    def start_task(task_id):
+        try:
+            print "Starting Task with id " + str(task_id) + "..."
+            url = teampura_url(url_object="items") + str(task_id)
+
+            task_data = {
+                "status": "STARTED"
+            }
+            data = json.dumps(task_data)
+            req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+            response = urllib2.urlopen(req)
+            api_response = json.loads(response.read())
+            response.close()
+            print "Started Task."
+            return True
+
+        except IndexError:
+            print "What task do you want me to start?"
+
+        return False
+
+
+    def pause_task(task_id):
+        try:
+            print "Pausing Task with id " + str(task_id) + "..."
+            url = teampura_url(url_object="items") + str(task_id)
+            task_data = {
+                "status": "PAUSED"
+            }
+            data = json.dumps(task_data)
+            req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+            response = urllib2.urlopen(req)
+            api_response = json.loads(response.read())
+            response.close()
+            print "Paused Task."
+            return True
+
+        except IndexError:
+            print "What task do you want me to pause?"
+
+        return False
+
+
+    def finish_task(task_id):
+        try:
+            print "Finishing Task with id " + str(task_id) + "..."
+            url = teampura_url(url_object="items") + str(task_id)
+            task_data = {
+                "status": "DONE",
+                "finisher": CONFIG['user'],
+            }
+            data = json.dumps(task_data)
+            req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+            response = urllib2.urlopen(req)
+            api_response = json.loads(response.read())
+            response.close()
+            print "Finished Task."
+            return True
+
+        except IndexError:
+            print "What task do you want me to mark as DONE?"
+
+        return False
+
+
+    # Parse args into command, options, and parameters
+    args = sys.argv
+    for arg in args[1:]:
+        if arg.startswith("-"):
+            extract_options(arg)
+
+        elif arg == cwd:
+            continue
+
+        elif not command:
+            command = arg
+
+        else:
+            parameters.append(arg)
+
+
+    if command == "status":
+        # show project
+        project_id = get_current_project_id(choices=False)
+        if project_id:
+            print_project_details(project_id)
+        else:
+            print "Not in any project. Use 'agile link project' in git repo to link a project to a repo."
+
+
+    # List Projects
+    elif command == "projects":
+        if not parameters:
+            print "Fetching Projects..."
+            url = teampura_url(url_object="projects")
+            print url
+            response = urllib2.urlopen(url)
+            api_response = json.loads(response.read())
+            projects = api_response['data']['projects']
+
+            if projects:
+                count = 1
+                for project in projects:
+                    print ''
+                    print colorize(str(project['title']), 'green')
+                    if project['description']:
+                        print project['description']
+                    else:
+                        print "~ No details ~"
+                    count += 1
+
+                count = count - 1
+                print '\nFetched ' + str(count) + ' projects.'
+            else:
+                print "No Projects"
+
+        elif parameters[0] == 'link':
+            link_project()
+
+
+    elif command == "link":
+        if parameters:
+            if parameters[0] == 'project':
+                link_project()
+
+
+    # List Tasks
+    elif command == "tasks":
+        if not parameters:
+            fetch_tasks()
+
+    elif command == 'my':
+        if parameters:
+            if parameters[0] == 'tasks':
+                fetch_tasks(filter_owner=CONFIG['user'])
+
+
+    elif command == 'all':
+        if len(parameters) == 2:
+            if parameters[0] == 'my' and parameters[1] == 'tasks':
+                fetch_tasks(filter_owner=CONFIG['user'], all_tasks=True)
+
+            elif "@" in parameters[0] and parameters[1] == 'tasks':
+                fetch_tasks(filter_owner=parameters[0], all_tasks=True)
+
+        if len(parameters) == 1:
+            if parameters[0] == 'tasks':
+                fetch_tasks(filter_owner=None, all_tasks=True)
+
+
+    elif command == 'start':
+        if parameters:
+            if parameters[0] == 'this':
+                item_id = get_current_item_id()
+                if not item_id:
+                    print "Not in a branch that has a valid branch name format"
+                    sys.exit(0)
+
+                start_task(item_id)
+                sys.exit(0)
+                # already in branch no need to switch
+
+
+        items = fetch_tasks(filter_status=["PENDING", "PAUSED"])
+        # items = fetch_tasks(filter_status=["PAUSED"])
+        if not items:
+            sys.exit(0)
+
+        b = raw_input("Enter # of Task to Start: ")
+        try:
+            index = int(b) - 1
+        except:
+            print "Error."
+            sys.exit(0)
+
+        item_id = items[index]["id"]
+
+        # Start Task
+        if not start_task(item_id):
+            sys.exit(0)
+
+        create_and_switch_to_branch(slugify(items[index]["content"]) + "_" + str(items[index]["id"]))
+
+
+    elif command == 'pause':
+        if parameters:
+            if parameters[0] == 'this':
+                item_id = get_current_item_id()
+                if not item_id:
+                    print "Not in a branch that has a valid branch name format"
+                    sys.exit(0)
+
+                pause_task(item_id)
+
+
+        else:
+            items = fetch_tasks(filter_status=["STARTED"])
+            if not items:
+                sys.exit(0)
+            b = raw_input("Enter # of Task to Pause: ")
+            try:
+                index = int(b) - 1
+            except:
+                print "Error."
+                sys.exit(0)
+
+            item_id = items[index]["id"]
+
+            # Pause Task
+            pause_task(item_id)
+
+
+    elif command == 'finish':
+        if parameters:
+            if parameters[0] == 'this':
+                item_id = get_current_item_id()
+                if not item_id:
+                    print "Not in a branch that has a valid branch name format"
+                    sys.exit(0)
+
+                finish_task(item_id)
+
+
+        else:
+            items = fetch_tasks(filter_status=["STARTED"])
+            if not items:
+                sys.exit(0)
+
+            b = raw_input("Enter # of Task to Finish: ")
+            try:
+                index = int(b) - 1
+            except:
+                print "Error."
+                sys.exit(0)
+
+            item_id = items[index]["id"]
+
+            # Pause Task
+            finish_task(item_id)
+
+
+    elif command == 'create':
+        if not parameters:
+            print "What do you want me to create? Missing parameter error."
+
+        elif parameters[0] == 'task':
+            try:
+                task = parameters[1]
+                try:
+                    owner = parameters[2]
+                except IndexError:
+                    owner = CONFIG['user']
+                print "Creating Task for " + owner + "..."
+
+                url = teampura_url(url_object="items")
+                task_data = {
+                    "content": parameters[1],
+                    "owner": owner,
+                    "parent": get_current_project_id(),
+                }
+                data = json.dumps(task_data)
+                req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+                response = urllib2.urlopen(req)
+                api_response = json.loads(response.read())
+                response.close()
+                print "Created Task: " + task_data["content"]
+
+            except IndexError:
+                print "What task do you want me to create? Please surround it with quotes."
+
+        elif parameters[0] == 'project':
+            try:
+                project_name = parameters[1]
+                project_description = parameters[2]
+                print "Creating Project for " + CONFIG['user'] + "..."
+                url = teampura_url(url_object="projects")
+                project_data = {
+                    "title": project_name,
+                    "description": project_description
+                }
+                data = json.dumps(project_data)
+                req = urllib2.Request(url, data, {'Content-Type': 'application/json'})
+                response = urllib2.urlopen(req)
+                api_response = json.loads(response.read())
+                response.close()
+                print "Created Project: " + project_data["title"]
+
+            except IndexError:
+                print "Name AND Description required. Please surround it with quotes."
+
+
+    elif "@" in command:
+        if parameters:
+            if parameters[0] == 'tasks':
+                fetch_tasks(filter_owner=command)
 
 except KeyboardInterrupt:
-	print "\n"
-	print "Interrupted. Exiting."
+    print "\n"
+    print "Interrupted. Exiting."
 
 
 # git config --get remote.origin.url
