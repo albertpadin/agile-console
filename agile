@@ -6,6 +6,7 @@ try:
     import subprocess
     import urllib2
     import json
+    import webbrowser
     from slugify import slugify
 
     cwd = (os.getcwd() + "/agile")
@@ -83,6 +84,9 @@ try:
     if not 'user' in CONFIG:
         email = raw_input("Enter your email address: ")
         CONFIG = add_to_config('user', email.lower().strip())
+
+    if not 'token' in CONFIG:
+        webbrowser.open_new("http:localhost:8081")
 
 
     def project_id_choices():

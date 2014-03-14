@@ -69,6 +69,9 @@ class LoginHandler:
         add_to_config("token", api_response["token"])
 
 
+        return "<h1> Woooohoooo!.. </h1> <p>Successfully Login!, You can use AGILE CONSOLE.. (^_^)v <p>"
+
+
 
 if __name__ == "__main__":
     app.run()
