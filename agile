@@ -65,7 +65,11 @@ try:
     CONFIG = read_config()
 
     def teampura_url(team=None, url_object=None, category=None):
-        TEAMPURA_URL = "http://" + CONFIG["teams"][0] + ".teampura.com/api/v3/"
+        try:
+            TEAMPURA_URL = "http://" + CONFIG["teams"][0] + ".teampura.com/api/v3/"
+        except:
+            print "No Existing Teams"
+            return
         if team:
             TEAMPURA_URL = "http://" + team + ".teampura.com/api/v3/"
 
