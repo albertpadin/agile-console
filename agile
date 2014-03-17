@@ -86,7 +86,19 @@ try:
         CONFIG = add_to_config('user', email.lower().strip())
 
     if not 'token' in CONFIG:
+        abspath = os.path.abspath("agile")
+        dname = os.path.dirname(abspath)
+        agile_path = dname + "/server.py"
+
+        run_server = subprocess.Popen(["python", agile_path, "8081"])
         webbrowser.open_new("http:localhost:8081")
+
+        while True:
+            CONFIG = read_config()
+            if 'token' in CONFIG:
+                run_server.kill()
+                print "server killed"
+                break
 
 
     def project_id_choices():
